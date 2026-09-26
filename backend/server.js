@@ -42,35 +42,42 @@ app.post("/api/generate", async (req, res) => {
     return res.status(400).json({ error: "Please provide ingredients." });
   }
 
-  try {
-    const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
-    const result = await model.generateContent(RECIPE_PROMPT + ingredients);
-    const text = result.response.text();
+  const models = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
 
-    // Strip markdown code fences if present
-    const cleaned = text.replace(/```(?:json)?\n?/g, "").trim();
+  for (const modelName of models) {
+    try {
+      console.log(`Trying model: ${modelName}`);
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(RECIPE_PROMPT + ingredients);
+      const text = result.response.text();
 
-    const parsed = JSON.parse(cleaned);
+      // Strip markdown code fences if present
+      const cleaned = text.replace(/```(?:json)?\n?/g, "").trim();
 
-    // Validate shape
-    if (
-      !parsed.title ||
-      !Array.isArray(parsed.ingredients) ||
-      !Array.isArray(parsed.steps) ||
-      parsed.ingredients.length === 0 ||
-      parsed.steps.length === 0
-    ) {
-      return res.status(502).json({ error: "AI returned an invalid recipe structure. Please retry." });
+      const parsed = JSON.parse(cleaned);
+
+      // Validate shape
+      if (
+        !parsed.title ||
+        !Array.isArray(parsed.ingredients) ||
+        !Array.isArray(parsed.steps) ||
+        parsed.ingredients.length === 0 ||
+        parsed.steps.length === 0
+      ) {
+        return res.status(502).json({ error: "AI returned an invalid recipe structure. Please retry." });
+      }
+
+      return res.json(parsed);
+    } catch (err) {
+      console.error(`Error with ${modelName}:`, err.message);
+      if (err instanceof SyntaxError) {
+        return res.status(502).json({ error: "AI returned malformed data. Please retry." });
+      }
+      // Try next model
     }
-
-    res.json(parsed);
-  } catch (err) {
-    console.error("Generate error:", err.message);
-    if (err instanceof SyntaxError) {
-      return res.status(502).json({ error: "AI returned malformed data. Please retry." });
-    }
-    res.status(500).json({ error: "Failed to generate recipe. Please try again." });
   }
+
+  res.status(500).json({ error: "All AI models are currently unavailable. Please try again shortly." });
 });
 
 const PORT = process.env.PORT || 3001;
